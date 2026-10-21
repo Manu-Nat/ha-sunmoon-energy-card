@@ -1,11 +1,11 @@
 /*!
- * Sun Moon Energy  v1.0.0
+ * Sunmoon Energy  v1.0.0
  * Card Lovelace custom per Home Assistant: sole, traliccio, casa e flussi energetici animati.
  * Configurabile interamente da editor grafico.
  */
-const SUNMOON_VERSION = '1.0.0';
+const NEXUS_VERSION = '1.0.0';
 
-const SUNMOON_DEFAULTS = {
+const NEXUS_DEFAULTS = {
   solar_power: '',
   home_power: '',
   grid_power: '',
@@ -51,7 +51,7 @@ const SUNMOON_DEFAULTS = {
   home_box_scale: 1, home_box_value_scale: 1, home_box_x: 0, home_box_y: 0,
 };
 
-const SUNMOON_COLOR_KEYS = ['pv_color', 'import_color', 'export_color', 'home_color', 'battery_color', 'car_color'];
+const NEXUS_COLOR_KEYS = ['pv_color', 'import_color', 'export_color', 'home_color', 'battery_color', 'car_color'];
 
 const nxToRgb = (h) => {
   const m = /^#?([0-9a-f]{6})$/i.exec(h || '');
@@ -85,7 +85,7 @@ const nxRng = (seed) => () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
-/* palette e ingredienti per ogni condizione meteo */
+/* palette e ingredienti per ogni condizione meteo (sky = cielo di giorno: alto / centro / orizzonte) */
 const NX_WX = {
   default: { sky: ['#10223C', '#071020', '#02050D'], cloudCol: '#9db8d4', clouds: 0, stars: 0.85, glow: 0.28, dim: 1, tw: 0.55, cs: 1 },
   sunny: { sky: ['#2a82d6', '#1b62ae', '#0e386a'], cloudCol: '#ffffff', clouds: 1, stars: 1, glow: 1, dim: 1, tw: 1, cs: 1.3 },
@@ -111,6 +111,7 @@ const NX_WX_LABELS = {
   snowy: 'Neve', 'snowy-rainy': 'Nevischio', windy: 'Vento', 'windy-variant': 'Vento e nuvole', exceptional: 'Eccezionale',
 };
 
+/* colori del cielo in funzione di meteo e "notte" (0 = giorno pieno, 1 = notte piena); al tramonto vira all'arancio */
 const nxSky = (cond, night) => {
   const P = NX_WX[cond] || NX_WX.default;
   const tw = Math.sin(Math.PI * night) * P.tw;
@@ -123,8 +124,8 @@ const nxSky = (cond, night) => {
   };
 };
 
-const SUNMOON_STYLE = `
-  :host { display: block; height: 100%; width: 100%; }
+const NEXUS_STYLE = `
+  :host { display: block; }
   ha-card {
     padding: 0;
     overflow: hidden;
@@ -132,14 +133,9 @@ const SUNMOON_STYLE = `
     background: #030610;
     border: 1px solid rgba(71,220,255,0.48);
     box-shadow: 0 0 35px rgba(0,177,255,0.15), inset 0 0 32px rgba(0,120,255,0.08);
-    height: 100%;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
   }
-  .nx-stage { position: relative; width: 100%; height: 100%; overflow: hidden; aspect-ratio: 1000 / 650; }
-  .nx-svg { position: relative; display: block; width: 100%; height: 100%; }
+  .nx-stage { position: relative; width: 100%; overflow: hidden; }
+  .nx-svg { position: relative; display: block; width: 100%; height: auto; }
   .nx-layer { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
   .nx-svg text, .nx-boxes text { font-family: Roboto, Arial, sans-serif; }
 
@@ -209,11 +205,14 @@ const SUNMOON_STYLE = `
   @keyframes nx-panel-light { from { opacity: .45; } to { opacity: 1; } }
   @keyframes nx-panel-sweep { 0% { transform: translateX(0); opacity: 0; } 20% { opacity: .6; } 80% { opacity: .6; } 100% { transform: translateX(215px); opacity: 0; } }
 
+  /* ---------- batteria e auto ---------- */
   .nx-seg { animation: nx-seg 1.1s ease-in-out infinite; }
   @keyframes nx-seg { 0%,100% { filter: brightness(1); opacity: .72; } 50% { filter: brightness(1.8); opacity: 1; } }
   .nx-bolt-bat { animation: nx-energy-pv .9s ease-in-out infinite alternate; }
   .nx-bolt-car { animation: nx-energy-pv .8s ease-in-out infinite alternate; }
 
+  /* ---------- luna ---------- */
+  /* luna animata */
   .nx-moon-sway { animation: nx-moon-sway 7s ease-in-out infinite; }
   @keyframes nx-moon-sway {
     0%,100% { transform: translate(calc(-3px * var(--a)), calc(2px * var(--a))) rotate(calc(-2.6deg * var(--a))); }
@@ -221,6 +220,7 @@ const SUNMOON_STYLE = `
   .wx-shoot { opacity: 0; animation: wx-shoot 9s linear infinite; }
   @keyframes wx-shoot { 0% { opacity: 0; transform: translate(0, 0); } 1% { opacity: 1; } 9% { opacity: 0; transform: translate(300px, 110px); } 100% { opacity: 0; transform: translate(300px, 110px); } }
 
+  /* ---------- meteo ---------- */
   .wx-cl { animation: wx-drift 100s linear infinite; }
   @keyframes wx-drift { from { transform: translateX(-380px); } to { transform: translateX(1180px); } }
   .wx-star { animation: wx-twinkle 3.5s ease-in-out infinite; }
@@ -242,7 +242,7 @@ const SUNMOON_STYLE = `
   @keyframes wx-windmove { from { transform: translateX(-220px); } to { transform: translateX(1120px); } }
 `;
 
-class SunMoonEnergyCard extends HTMLElement {
+class NexusSolarCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
@@ -251,19 +251,19 @@ class SunMoonEnergyCard extends HTMLElement {
 
   setConfig(config) {
     if (!config) throw new Error('Configurazione non valida');
-    this._config = { ...SUNMOON_DEFAULTS, ...config };
+    this._config = { ...NEXUS_DEFAULTS, ...config };
     this._last = {};
     this._wxSig = '';
     this._wxKey = '';
-    this._H = 650;
-    this.shadowRoot.innerHTML = `<style>${SUNMOON_STYLE}</style>
+    this._H = 0;
+    this.shadowRoot.innerHTML = `<style>${NEXUS_STYLE}</style>
 <ha-card>
   <div class="nx-stage">
-    <svg class="nx-layer nx-wx-back" viewBox="0 0 1000 650" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"></svg>
-    <svg class="nx-svg" viewBox="0 0 1000 650" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" role="img"
-         aria-label="Sun Moon Energy: sole, rete elettrica, flussi energetici e casa"></svg>
-    <svg class="nx-layer nx-wx-front" viewBox="0 0 1000 650" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"></svg>
-    <svg class="nx-layer nx-boxes" viewBox="0 0 1000 650" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"></svg>
+    <svg class="nx-layer nx-wx-back" viewBox="0 0 1000 650" xmlns="http://www.w3.org/2000/svg"></svg>
+    <svg class="nx-svg" viewBox="0 0 1000 650" xmlns="http://www.w3.org/2000/svg" role="img"
+         aria-label="Sunmoon Energy: sole, luna, rete elettrica, flussi energetici e casa"></svg>
+    <svg class="nx-layer nx-wx-front" viewBox="0 0 1000 650" xmlns="http://www.w3.org/2000/svg"></svg>
+    <svg class="nx-layer nx-boxes" viewBox="0 0 1000 650" xmlns="http://www.w3.org/2000/svg"></svg>
   </div>
 </ha-card>`;
     const q = (c) => this.shadowRoot.querySelector(c);
@@ -294,6 +294,7 @@ class SunMoonEnergyCard extends HTMLElement {
     };
   }
 
+  /* ---------- rotazione della luna (sfera: i crateri girano con prospettiva) ---------- */
   _moonStep() {
     const els = this._el && this._el.scene ? this._el.scene.querySelectorAll('.mcr') : [];
     if (!els.length) return false;
@@ -301,12 +302,12 @@ class SunMoonEnergyCard extends HTMLElement {
     const now = performance.now();
     const dt = this._mt ? Math.min(1, (now - this._mt) / 1000) : 0;
     this._mt = now;
-    this._th = (this._th || 0) + (dt * sp * 2 * Math.PI) / 36;
+    this._th = (this._th || 0) + (dt * sp * 2 * Math.PI) / 36;           // a velocità 1: un giro ogni 36 secondi
     const th = this._th;
     const R = 66, D = Math.PI / 180;
     els.forEach((e) => {
       const a = Number(e.dataset.lon) * D + th, lat = Number(e.dataset.lat) * D, r = Number(e.dataset.r);
-      const ca = Math.cos(a), n = ca * Math.cos(lat);
+      const ca = Math.cos(a), n = ca * Math.cos(lat);                    // quanto la zona guarda verso di noi
       if (n <= 0.04) { e.setAttribute('opacity', '0'); return; }
       e.setAttribute('cx', (R * Math.cos(lat) * Math.sin(a)).toFixed(1));
       e.setAttribute('cy', (R * Math.sin(lat)).toFixed(1));
@@ -323,7 +324,7 @@ class SunMoonEnergyCard extends HTMLElement {
     let last = 0;
     const tick = (t) => {
       this._raf = requestAnimationFrame(tick);
-      if (t - last < 40) return;
+      if (t - last < 40) return;                                         // ~25 fps bastano
       last = t;
       if (!this._moonStep()) { cancelAnimationFrame(this._raf); this._raf = 0; }
     };
@@ -333,16 +334,19 @@ class SunMoonEnergyCard extends HTMLElement {
   connectedCallback() { if (this._config && this._el) this._moonLoop(!!this._el.scene.querySelector('.mcr')); }
   disconnectedCallback() { this._moonLoop(false); }
 
+  /* ---------- giorno / notte ---------- */
   _night(pvW, cond) {
     const c = this._config;
     const pn = c.preview_night;
     if (pn !== undefined && pn !== null && pn !== '' && pn !== 'auto' && Number.isFinite(Number(pn))) return nxClamp(Number(pn));
     const states = (this._hass && this._hass.states) || {};
 
+    /* 1) elevazione del sole (sun.sun): +4° = giorno pieno, -8° = notte piena */
     const se = states[c.sun_entity || 'sun.sun'];
     const el = se && se.attributes ? Number(se.attributes.elevation) : NaN;
     if (Number.isFinite(el)) return nxSmooth((4 - el) / 12);
 
+    /* 2) sensori sun_next_rising / sun_next_setting */
     const ts = (id) => {
       const st = id && states[id];
       if (!st || !st.state || ['unknown', 'unavailable'].includes(st.state)) return null;
@@ -355,17 +359,19 @@ class SunMoonEnergyCard extends HTMLElement {
       const isDay = set < rise;
       const setRef = isDay ? set : set - D;
       const riseRef = isDay ? rise - D : rise;
-      const x = (now - setRef) / 60000;
-      const y = (now - riseRef) / 60000;
+      const x = (now - setRef) / 60000;   // minuti dal tramonto
+      const y = (now - riseRef) / 60000;  // minuti dall'alba
       const evening = nxClamp((x + 45) / 85);
       const morning = nxClamp((45 - y) / 85);
       return nxSmooth(Math.max(evening, morning));
     }
 
+    /* 3) solo produzione */
     if (cond === 'clear-night') return 1;
     return pvW > 10 ? 0 : 1;
   }
 
+  /* ---------- livelli meteo (dietro e davanti alla scena) ---------- */
   _wxBuild(cond, sx, sy, H = 650) {
     const P = NX_WX[cond] || NX_WX.default;
     const R = nxRng(11 + cond.length * 17 + cond.charCodeAt(0));
@@ -379,6 +385,7 @@ class SunMoonEnergyCard extends HTMLElement {
       return arr.map((c) => `<g class="wx-cl" style="animation-duration:${c.d.toFixed(1)}s;animation-delay:-${(c.o * c.d).toFixed(1)}s" opacity="${c.a.toFixed(2)}"><g transform="translate(0 ${c.y.toFixed(0)}) scale(${c.s.toFixed(2)})"><use href="#${ref}"/></g></g>`).join('');
     };
 
+    /* DIETRO: cielo, aloni, stelle, nuvole */
     const diag = cond === 'default';
     let stars = '';
     for (let i = 0; i < 64; i++) {
@@ -408,6 +415,7 @@ class SunMoonEnergyCard extends HTMLElement {
     </g>
     <g id="wx-bc">${P.clouds ? layer('wx-cb', P.clouds, 28, 330, 0.8, 1.7, 70, 150, 0.45, 0.85) : ''}</g>`;
 
+    /* DAVANTI: nuvole basse, precipitazioni, nebbia, lampi, vento */
     let fr = '';
     if (P.front) fr += layer('wx-cf', P.front, 150, 330, 1.5, 2.3, 55, 95, 0.38, 0.55);
     if (P.rain) {
@@ -471,6 +479,7 @@ class SunMoonEnergyCard extends HTMLElement {
     set('wx-fr', 'opacity', intensity.toFixed(2));
   }
 
+  /* ---------- lettura stati ---------- */
   _state(id) {
     if (!id || !this._hass || !this._hass.states) return null;
     const s = this._hass.states[id];
@@ -501,6 +510,7 @@ class SunMoonEnergyCard extends HTMLElement {
     return s.n;
   }
 
+  /* ---------- riquadro generico ---------- */
   _box(o) {
     const vs = o.vs;
     const hasStatus = !!o.status;
@@ -542,15 +552,16 @@ class SunMoonEnergyCard extends HTMLElement {
     return { g, H };
   }
 
+  /* ---------- rendering ---------- */
   _render() {
     if (!this._config) return;
     const c = this._config;
     const num = (k) => {
       const v = Number(c[k]);
-      return Number.isFinite(v) ? v : SUNMOON_DEFAULTS[k];
+      return Number.isFinite(v) ? v : NEXUS_DEFAULTS[k];
     };
     const sc = (k) => Math.max(0.2, num(k));
-    const col = (k) => nxToHex(c[k]) || SUNMOON_DEFAULTS[k];
+    const col = (k) => nxToHex(c[k]) || NEXUS_DEFAULTS[k];
     const lang = (this._hass && this._hass.locale && this._hass.locale.language) || 'it-IT';
 
     const pvColor = col('pv_color');
@@ -558,13 +569,15 @@ class SunMoonEnergyCard extends HTMLElement {
     const exportColor = col('export_color');
     const homeColor = col('home_color');
 
+    /* valori */
     const solar = this._power(c.solar_power);
     const home = this._power(c.home_power);
     let grid = this._power(c.grid_power);
     if (grid !== null && c.grid_invert) grid = -grid;
 
+    /* batteria di accumulo e auto elettrica (opzionali) */
     let batt = this._power(c.battery_power);
-    if (batt !== null && c.battery_invert) batt = -batt;
+    if (batt !== null && c.battery_invert) batt = -batt;               // positivo = in carica
     const hasBatt = !!(c.battery_power || c.battery_soc);
     const hasCar = !!(c.car_power || c.car_soc);
     const soc = this._pct(c.battery_soc);
@@ -576,8 +589,8 @@ class SunMoonEnergyCard extends HTMLElement {
     const carCharging = carW > 25;
     const carSoc = this._pct(c.car_soc);
     const battColor = col('battery_color'), carColor = col('car_color');
-    const H = 650;
-    const X = hasBatt || hasCar;
+    const H = 650;                                   // sempre un pannello singolo
+    const X = hasBatt || hasCar;                     // con batteria/auto la scena si compatta
 
     const pvW = Math.max(0, solar ?? 0);
     const homeW = Math.max(0, home ?? 0);
@@ -600,7 +613,9 @@ class SunMoonEnergyCard extends HTMLElement {
 
     const maxP = Math.max(1, num('solar_max_power'));
     const solarLevel = Math.round(Math.min(1, pvW / maxP) * 50) / 50;
+    const panelOpacity = 0.24 + solarLevel * 0.76;
 
+    /* chi alimenta la casa: il nodo e' un "bus", ogni utilizzatore preleva dalle fonti nella stessa proporzione */
     const srcPv = pv ? pvW : 0, srcBat = bd, srcImp = importing ? gridW : 0;
     const supply = srcPv + srcBat + srcImp;
     const frRaw = supply > 10 ? [srcPv / supply, srcBat / supply, srcImp / supply] : [0, 0, 0];
@@ -621,19 +636,16 @@ class SunMoonEnergyCard extends HTMLElement {
     const roofColor = roofMulti ? 'url(#nx-roof-mix)' : mixSrc.length ? mixSrc[0][1] : '#294052';
     const roofGlow = pv || importing || exporting || bd > 0 ? 1 : 0.2;
 
+    /* geometrie con scala e offset */
     const ss = sc('sun_scale'), sx = 500 + num('sun_x'), sy = 245 + num('sun_y');
     const ts = sc('pylon_scale') * (X ? 0.88 : 1), px = (X ? 150 : 180) + num('pylon_x'), py = (X ? 488 : 524) + num('pylon_y');
     const hs = sc('house_scale') * (X ? 0.88 : 1), hx = (X ? 878 : 871) + num('house_x'), hy = (X ? 470 : 494) + num('house_y');
     const gp = (lx, ly) => [px + (lx - 106) * ts, py + (ly - 289) * ts];
     const gh = (lx, ly) => [hx + (lx - 107) * hs, hy + (ly - 229) * hs];
-
-    /* INVERSIONE POSTI: AUTO A SINISTRA (345), BATTERIA A DESTRA (655) */
-    const csc = sc('car_scale') * 0.9, carX = 345 + num('car_x'), carY = 590 + num('car_y');
-    const bsc = sc('battery_scale') * 0.95, bx = 655 + num('battery_x'), by = 582 + num('battery_y');
-    
-    const gcar = (lx, ly) => [carX + lx * csc, carY + ly * csc];
+    const bsc = sc('battery_scale') * 0.95, bx = 642 + num('battery_x'), by = 582 + num('battery_y');
+    const csc = sc('car_scale') * 0.9, carX = 392 + num('car_x'), carY = 590 + num('car_y');
     const gb = (lx, ly) => [bx + lx * bsc, by + ly * bsc];
-    
+    const gcar = (lx, ly) => [carX + lx * csc, carY + ly * csc];
     const imgUrl = (k) => String(c[k] || '').trim().replace(/["<>]/g, '');
     const battImg = imgUrl('battery_image'), carImg = imgUrl('car_image'), houseImg = imgUrl('house_image');
 
@@ -688,18 +700,16 @@ class SunMoonEnergyCard extends HTMLElement {
         <circle cx="${end[0].toFixed(1)}" cy="${end[1].toFixed(1)}" r="6" fill="#FFFFFF" filter="url(#nx-glow)"/>
       </g>`;
 
+    /* ripartizione energia */
     const expW = exporting ? -gridW : 0;
     const pvHome = pv ? Math.max(0, pvW - expW) : 0;
     const pvOnHome = pvHome > 10;
 
     let flows = '';
-    
-    /* PORTE SCAMBIATE: jCar usa la porta in basso a sinistra (bl), jBatt la porta in basso a destra (br) */
-    const wallTop = carImg ? gcar(-40, -80) : gcar(-137, -56);
     const battTop = battImg ? gb(0, -66) : gb(7, -57);
-    const jCar = hubStyle === 'direct' ? gh(26, 200) : hubPorts.bl;
+    const wallTop = carImg ? gcar(-40, -80) : gcar(-137, -56);
     const jBatt = hubStyle === 'direct' ? gh(30, 205) : hubPorts.br;
-
+    const jCar = hubStyle === 'direct' ? gh(26, 200) : hubPorts.bl;
     if (hubStyle === 'direct') {
       if (pvOnHome) flows += flow(bolt(fromSun(pvEnd), pvEnd, 5), pvColor, 'nx-bolt-pv', pvEnd, false);
       if (exporting) flows += flow(bolt(fromSun(gridStart), gridStart, 9), exportColor, 'nx-grid-export', gridStart, true);
@@ -722,9 +732,11 @@ class SunMoonEnergyCard extends HTMLElement {
     if (hasBatt && discharging) flows += flow(bolt(battTop, jBatt, 6), battColor, 'nx-bolt-bat', jBatt, false);
     if (hasCar && carCharging) flows += flow(bolt(jCar, wallTop, 6), carColor, 'nx-bolt-car', wallTop, false);
 
+    /* nodo centrale */
     const hubActive = pv || importing || exporting;
     const hubColor = pv ? pvColor : importing ? importColor : exporting ? exportColor : idleColor;
     let hubMarkup = '';
+    /* valore mostrato dal nodo: entità scelta, altrimenti potenza in transito (produzione + prelievo) */
     const hubVal = c.hub_entity ? this._power(c.hub_entity) : supply;
     const hubKw = hubVal === null ? '—' : (hubVal / 1000).toLocaleString(lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     const hubOn = hubVal !== null && hubVal > 10;
@@ -771,6 +783,7 @@ class SunMoonEnergyCard extends HTMLElement {
       </g>`;
     }
 
+    /* riquadri */
     const solarRows = [];
     if (c.solar_forecast_remaining) solarRows.push({ label: 'RIMANENTE PREVISTO', value: fmtE(this._energy(c.solar_forecast_remaining)), color: nxMix(pvColor, 0.35) });
     if (c.solar_total_today) solarRows.push({ label: 'PRODOTTO OGGI', value: fmtE(this._energy(c.solar_total_today)), color: nxMix(pvColor, 0.35) });
@@ -813,31 +826,16 @@ class SunMoonEnergyCard extends HTMLElement {
       if (c.car_energy_today) rows.push({ label: 'ENERGIA OGGI', value: fmtE(this._energy(c.car_energy_today)), color: nxMix(carColor, 0.3) });
       bCar = this._box({ shape: 'grid', w: 225, color: carCharging ? carColor : '#7F97B0', title: 'RICARICA AUTO', value: c.car_power ? fmt(carRaw === null ? null : carW) : (carSoc === null ? '—' : String(Math.round(carSoc))), unit: c.car_power ? 'W' : '%', status: carCharging ? 'IN CARICA' : 'IN ATTESA', rows, vs: sc('car_box_value_scale') });
     }
-    
-    /* INVERSIONE POSTI RIQUADRI: AUTO A SINISTRA (24 + ...), BATTERIA A DESTRA (982 - 231*bbs + ...) */
     const bbs = sc('battery_box_scale') * 0.9, cbs = sc('car_box_scale') * 0.9;
-    const carT = `translate(${24 + num('car_box_x')} ${540 + num('car_box_y')}) scale(${cbs})`;
     const battT = `translate(${982 + num('battery_box_x') - 231 * bbs} ${540 + num('battery_box_y')}) scale(${bbs})`;
+    const carT = `translate(${24 + num('car_box_x')} ${540 + num('car_box_y')}) scale(${cbs})`;
 
     const sbs = sc('solar_box_scale'), gbs = sc('grid_box_scale'), hbs = sc('home_box_scale');
     const solarT = `translate(${500 + num('solar_box_x') - 124 * sbs} ${18 + num('solar_box_y')}) scale(${sbs})`;
     const gridT = `translate(${24 + num('grid_box_x')} ${118 + num('grid_box_y')}) scale(${gbs})`;
     const homeT = `translate(${982 + num('home_box_x') - 231 * hbs} ${118 + num('home_box_y')}) scale(${hbs})`;
 
-    const PL = 'M31 91L98 43V76L31 119Z', PR = 'M113 47L181 91V119L113 77Z';
-    const lvl = pv ? 0.55 + solarLevel * 0.45 : 0;
-    const cellLines = pv ? '#FFFFFF' : '#6D93AF';
-    const panelsMarkup = `
-        ${pv ? `<g class="nx-panel-light" filter="url(#nx-blur)"><path d="${PL}" fill="${pvColor}" opacity="${lvl}"/><path d="${PR}" fill="${pvColor}" opacity="${lvl}"/></g>` : ''}
-        <g class="nx-solar-panels">
-          <path d="${PL}" fill="${pv ? 'url(#nx-panel-lit)' : 'url(#nx-panel-off)'}" stroke="${pv ? nxMix(pvColor, 0.75) : '#4F7088'}" stroke-width="2.2"/>
-          <path d="${PR}" fill="${pv ? 'url(#nx-panel-lit)' : 'url(#nx-panel-off)'}" stroke="${pv ? nxMix(pvColor, 0.75) : '#4F7088'}" stroke-width="2.2"/>
-          <path d="M53 77V105 M70 65V94 M87 53V82 M130 58V88 M147 69V98 M164 80V109 M31 101L98 59 M31 111L98 69 M113 58L181 100 M113 68L181 110"
-                fill="none" stroke="${cellLines}" stroke-opacity="${pv ? 0.6 : 0.4}" stroke-width="1.3"/>
-          ${pv ? `<clipPath id="nx-panel-clip"><path d="${PL}"/><path d="${PR}"/></clipPath>
-          <g clip-path="url(#nx-panel-clip)"><path class="nx-panel-sweep" d="M-30 30L-6 30L34 130L10 130Z" fill="#FFFFFF" opacity=".55"/></g>` : ''}
-        </g>`;
-
+    /* ---- meteo, giorno/notte e luna ---- */
     const wxStates = (this._hass && this._hass.states) || {};
     const pw = c.preview_weather && c.preview_weather !== 'auto' ? c.preview_weather : null;
     const wxEnt = c.weather_entity ? wxStates[c.weather_entity] : null;
@@ -846,23 +844,23 @@ class SunMoonEnergyCard extends HTMLElement {
     else if (wxEnt && NX_WX[wxEnt.state]) cond = wxEnt.state;
     const wxP = NX_WX[cond];
     const night = this._night(pvW, cond);
-    const cover = Math.round(night * 100) / 100;
-    const moonLit = nxSmooth((cover - 0.85) / 0.15);
-    const sunVis = 1 - nxSmooth((cover - 0.85) / 0.15);
+    const cover = Math.round(night * 100) / 100;                       // quanto la luna ha coperto il sole (0..1)
+    const moonLit = nxSmooth((cover - 0.85) / 0.15);                   // a copertura quasi totale la luna si accende
+    const sunVis = 1 - nxSmooth((cover - 0.85) / 0.15);                // ...e il corona del sole si spegne
     const sunOp = (sunVis * wxP.dim).toFixed(2);
     let moonMarkup = '';
     if (cover > 0.01) {
       const R = 66;
       const slide = nxSmooth(cover / 0.85);
-      const dx = (1 - slide) * 132, dy = -(1 - slide) * 24;
+      const dx = (1 - slide) * 132, dy = -(1 - slide) * 24;            // il disco lunare scivola sul sole
       const skyNow = nxSky(cond, cover);
       const sil = nxLerpC(skyNow.mid, '#010208', 0.7);
       const PH = { new_moon: 0, waxing_crescent: 0.125, first_quarter: 0.25, waxing_gibbous: 0.375, full_moon: 0.5, waning_gibbous: 0.625, last_quarter: 0.75, waning_crescent: 0.875 };
       const mp = c.moon_phase;
-      let k = 0.5;
+      let k = 0.5;                                                     // 0 = nuova, 0.5 = piena
       if (!mp || mp === 'real') k = ((((Date.now() - 947182440000) / 2551442877) % 1) + 1) % 1;
       else if (PH[mp] !== undefined) k = PH[mp];
-      const f = (1 - Math.cos(2 * Math.PI * k)) / 2;
+      const f = (1 - Math.cos(2 * Math.PI * k)) / 2;                   // frazione illuminata
       const rx = Math.abs(1 - 2 * f) * R;
       const litPath = `M0 ${-R}A${R} ${R} 0 0 1 0 ${R}A${rx.toFixed(1)} ${R} 0 0 ${f < 0.5 ? 0 : 1} 0 ${-R}Z`;
       const discPath = `M${-R} 0A${R} ${R} 0 1 0 ${R} 0A${R} ${R} 0 1 0 ${-R} 0Z`;
@@ -874,6 +872,7 @@ class SunMoonEnergyCard extends HTMLElement {
         ['c', 255, 48, 6], ['c', 190, -4, 12],
       ];
       const craters = SPH.map(([t, lon, lat, r]) => `<ellipse class="mcr" data-lon="${lon}" data-lat="${lat}" data-r="${r}" data-o="${t === 'm' ? 0.4 : 0.52}" fill="${t === 'm' ? '#8795B6' : '#A9B4CE'}" opacity="0" rx="1" ry="1"/>`).join('');
+      const sync = (period) => `animation-delay:-${((Date.now() / 1000) % period).toFixed(2)}s`;   // le animazioni restano continue ai ridisegni
       const sp = nxClamp(Number(c.moon_speed) || 1, 0.2, 4);
       const swayDur = 7 / sp;
       moonMarkup = `<g transform="translate(${sx} ${sy}) scale(${ss})" opacity="${((0.5 + 0.5 * wxP.dim) * nxClamp(cover * 8)).toFixed(2)}">
@@ -896,7 +895,7 @@ class SunMoonEnergyCard extends HTMLElement {
       </g>`;
     }
 
-    /* BATTERIA (POSIZIONATA A DESTRA: bx, by) */
+    /* ---- batteria di accumulo ---- */
     let batteryMarkup = '';
     if (hasBatt) {
       const battLab = String(c.battery_label || 'BATTERIA').replace(/[<>&"]/g, '');
@@ -934,7 +933,7 @@ class SunMoonEnergyCard extends HTMLElement {
       }
     }
 
-    /* AUTO ELETTRICA (POSIZIONATA A SINISTRA: carX, carY) */
+    /* ---- auto elettrica con wallbox ---- */
     let carMarkup = '';
     if (hasCar) {
       const carLab = String(c.car_label || 'AUTO').replace(/[<>&"]/g, '');
@@ -978,6 +977,70 @@ class SunMoonEnergyCard extends HTMLElement {
         </g>`;
       }
     }
+
+    /* ---- casa: parallelepipedo isometrico con tetto a due falde. Muri, porta, finestre e pannelli
+          derivano tutti dalla stessa proiezione, quindi restano sempre in proporzione ---- */
+    const WZ = 108, RH = 46;                                                  // altezza dei muri e del colmo
+    const pj = (a, b, z) => [22 + 84 * (a + b), 199 + 30 * a - 30 * b - z];
+    const Pt = (a, b, z) => { const q = pj(a, b, z); return `${q[0].toFixed(1)} ${q[1].toFixed(1)}`; };
+    const poly = (pts) => 'M' + pts.map((q) => Pt(q[0], q[1], q[2])).join('L') + 'Z';
+    const SP = (sv, tv) => [-0.03 + 1.06 * sv, -0.05 + 0.55 * tv, WZ - 3 + (RH + 3) * tv];   // punto sulla falda anteriore
+    const quadS = (s0, s1, t0, t1) => poly([SP(s0, t0), SP(s1, t0), SP(s1, t1), SP(s0, t1)]);
+    let panels = '', panLines = '', panClip = '';
+    for (let ci = 0; ci < 4; ci++) {
+      for (let ri = 0; ri < 2; ri++) {
+        const s0 = 0.08 + ci * 0.21 + 0.012, s1 = 0.08 + (ci + 1) * 0.21 - 0.012;
+        const t0 = 0.14 + ri * 0.36 + 0.02, t1 = 0.14 + (ri + 1) * 0.36 - 0.02;
+        const d = quadS(s0, s1, t0, t1);
+        panels += `<path d="${d}" fill="${pv ? 'url(#nx-panel-lit)' : 'url(#nx-panel-off)'}" stroke="${pv ? nxMix(pvColor, 0.75) : '#4F7088'}" stroke-width="1.3" stroke-linejoin="round"/>`;
+        panClip += `<path d="${d}"/>`;
+        const sm = (s0 + s1) / 2, tm = (t0 + t1) / 2;
+        panLines += `M${Pt(...SP(sm, t0))}L${Pt(...SP(sm, t1))}M${Pt(...SP(s0, tm))}L${Pt(...SP(s1, tm))}`;
+      }
+    }
+    const lvlP = pv ? 0.55 + solarLevel * 0.45 : 0;
+    const ledD = `M${Pt(-0.03, -0.06, WZ - 6)}L${Pt(1.03, -0.06, WZ - 6)}L${Pt(1.03, 1.04, WZ - 6)}`;
+    const wallStroke = 'stroke="#4ADDEC" stroke-width="1.8" stroke-linejoin="round"';
+    const winFill = `fill="${load ? '#4AF4FF' : '#1C3045'}" fill-opacity="${load ? 0.9 : 0.3}" stroke="${houseColor}" stroke-width="1.6"`;
+    const winBars = `stroke="#D9FFFF" stroke-opacity="${load ? 0.9 : 0.22}" stroke-width="1.3" fill="none"`;
+    const houseDrawn = `
+        <ellipse cx="99" cy="222" rx="125" ry="20" fill="${houseColor}" opacity="${load ? 0.24 : 0.05}" filter="url(#nx-blur)"/>
+        <path d="M7 211L107 245L207 211L107 181Z" fill="#06111F" stroke="#32657D" stroke-opacity=".7"/>
+        <path d="${poly([[-0.03, 1.05, WZ - 3], [1.03, 1.05, WZ - 3], [1.03, 0.5, WZ + RH], [-0.03, 0.5, WZ + RH]])}" fill="#0F2B44" stroke="#4ADDEC" stroke-opacity=".5" stroke-width="1.4" stroke-linejoin="round"/>
+        <path d="${poly([[0, 0, 0], [1, 0, 0], [1, 0, WZ], [0, 0, WZ]])}" fill="url(#nx-house-front)" ${wallStroke}/>
+        <path d="${poly([[1, 0, 0], [1, 1, 0], [1, 1, WZ], [1, 0, WZ]])}" fill="#15405E" ${wallStroke}/>
+        <path d="${poly([[1, 0, WZ], [1, 1, WZ], [1, 0.5, WZ + RH]])}" fill="#1A4A6C" ${wallStroke}/>
+        <path d="${poly([[-0.03, -0.05, WZ - 3], [1.03, -0.05, WZ - 3], [1.03, 0.5, WZ + RH], [-0.03, 0.5, WZ + RH]])}" fill="url(#nx-roof)" stroke="#B5FFFF" stroke-width="1.8" stroke-linejoin="round"/>
+
+        ${pv ? `<g class="nx-panel-light" filter="url(#nx-blur)"><path d="${quadS(0.06, 0.94, 0.12, 0.88)}" fill="${pvColor}" opacity="${lvlP.toFixed(2)}"/></g>` : ''}
+        <g class="nx-solar-panels">
+          ${panels}
+          <path d="${panLines}" fill="none" stroke="${pv ? '#FFFFFF' : '#6D93AF'}" stroke-opacity="${pv ? 0.55 : 0.4}" stroke-width="1"/>
+          ${pv ? `<clipPath id="nx-panel-clip">${panClip}</clipPath><g clip-path="url(#nx-panel-clip)"><path class="nx-panel-sweep" d="M-30 40L-6 40L34 140L10 140Z" fill="#FFFFFF" opacity=".55"/></g>` : ''}
+        </g>
+
+        <path d="${ledD}" fill="none" stroke="${roofColor}" stroke-width="16" stroke-opacity="${roofGlow * 0.25}" stroke-linejoin="round" filter="url(#nx-blur)"/>
+        <path d="${ledD}" fill="none" stroke="${roofColor}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" filter="url(#nx-glow)" class="nx-roof-energy"/>
+        <path d="${ledD}" fill="none" stroke="#FFFFFF" stroke-opacity="${roofGlow * 0.8}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 18" class="nx-roof-pulse"/>
+
+        <path d="${poly([[0.1, 0, 52], [0.4, 0, 52], [0.4, 0, 90], [0.1, 0, 90]])}" ${winFill}/>
+        <path d="M${Pt(0.25, 0, 52)}L${Pt(0.25, 0, 90)}M${Pt(0.1, 0, 71)}L${Pt(0.4, 0, 71)}" ${winBars}/>
+        <path d="${poly([[1, 0.14, 50], [1, 0.4, 50], [1, 0.4, 88], [1, 0.14, 88]])}" ${winFill}/>
+        <path d="${poly([[1, 0.6, 50], [1, 0.86, 50], [1, 0.86, 88], [1, 0.6, 88]])}" ${winFill}/>
+        <path d="M${Pt(1, 0.27, 50)}L${Pt(1, 0.27, 88)}M${Pt(1, 0.14, 69)}L${Pt(1, 0.4, 69)}M${Pt(1, 0.73, 50)}L${Pt(1, 0.73, 88)}M${Pt(1, 0.6, 69)}L${Pt(1, 0.86, 69)}" ${winBars}/>
+        <circle cx="${pj(1, 0.5, WZ + 18)[0].toFixed(1)}" cy="${pj(1, 0.5, WZ + 18)[1].toFixed(1)}" r="5" fill="${load ? '#4AF4FF' : '#1C3045'}" fill-opacity="${load ? 0.85 : 0.3}" stroke="${houseColor}" stroke-width="1.4"/>
+
+        <path d="${poly([[0.58, 0, 0], [0.82, 0, 0], [0.82, 0, 66], [0.58, 0, 66]])}" fill="#FFCA69" fill-opacity="${load ? 0.85 : 0.2}" stroke="#FFDC88" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M${Pt(0.64, 0, 4)}L${Pt(0.64, 0, 62)}" stroke="#FFF5CA" stroke-opacity=".55" stroke-width="1.2"/>
+        <circle cx="${pj(0.78, 0, 32)[0].toFixed(1)}" cy="${pj(0.78, 0, 32)[1].toFixed(1)}" r="2" fill="#FFF5CA"/>
+
+        <path d="M${Pt(0.06, 0, 16)}L${Pt(0.46, 0, 16)}L${Pt(0.46, 0, 5)}M${Pt(1, 0.12, 24)}L${Pt(1, 0.7, 24)}L${Pt(1, 0.7, 34)}" fill="none" stroke="${houseColor}" stroke-opacity=".85" stroke-width="1.6" class="nx-house-circuit"/>
+
+        <path d="M22 199L106 229L190 199" fill="none" stroke="${roofColor}" stroke-width="4" filter="url(#nx-glow)"/>
+        <path d="M22 199L106 229L190 199" fill="none" stroke="#FFFFFF" stroke-width="1.2" stroke-dasharray="3 13" class="nx-roof-pulse"/>
+        <g fill="${gridColor}" filter="url(#nx-glow)">
+          <circle cx="22" cy="199" r="3.5"/><circle cx="106" cy="229" r="3.5"/><circle cx="190" cy="199" r="3.5"/>
+        </g>`;
 
     const houseImgMarkup = houseImg ? `<g transform="translate(${hx} ${hy}) scale(${hs}) translate(-107 -229)">
         <ellipse cx="107" cy="226" rx="120" ry="17" fill="${roofColor}" opacity="${load || pv ? 0.55 : 0.12}" filter="url(#nx-blur)"/>
@@ -1165,40 +1228,10 @@ class SunMoonEnergyCard extends HTMLElement {
 
       <!-- CASA -->
       ${houseImgMarkup}
-      <g ${houseImg ? 'display="none"' : ''} transform="translate(${hx} ${hy}) scale(${hs}) translate(-107 -229)">
-        <ellipse cx="99" cy="222" rx="125" ry="20" fill="${houseColor}" opacity="${load ? 0.24 : 0.05}" filter="url(#nx-blur)"/>
-        <path d="M7 211L107 245L207 211L107 181Z" fill="#06111F" stroke="#32657D" stroke-opacity=".7"/>
-        <path d="M22 105L106 46L190 105V199L106 229L22 199Z" fill="url(#nx-house-front)" stroke="#4ADDEC" stroke-width="2"/>
-        <path d="M106 46L190 105V199L106 229Z" fill="#12334C" stroke="#4ADDEC" stroke-width="2"/>
-        <path d="M22 105L106 135V229L22 199Z" fill="#0C2238" stroke="#51CDE6" stroke-opacity=".6"/>
-        <path d="M8 103L106 25L207 103L190 112L106 51L22 112Z" fill="url(#nx-roof)" stroke="#B5FFFF" stroke-width="2"/>
-        <path d="M106 51V135" stroke="#B8FFFF" stroke-opacity=".7" stroke-width="1.5"/>
-        <path d="M22 112L106 51L190 112" fill="none" stroke="#E0FFFF" stroke-width="2"/>
-        <path d="M14 105L106 43L201 105" fill="none" stroke="${roofColor}" stroke-width="20" stroke-opacity="${roofGlow * 0.25}" stroke-linejoin="round" filter="url(#nx-blur)"/>
-        <path d="M14 105L106 43L201 105" fill="none" stroke="${roofColor}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" filter="url(#nx-glow)" class="nx-roof-energy"/>
-        <path d="M14 105L106 43L201 105" fill="none" stroke="#FFFFFF" stroke-opacity="${roofGlow * 0.8}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 18" class="nx-roof-pulse"/>
+      <g ${houseImg ? 'display="none"' : ''} transform="translate(${hx} ${hy}) scale(${hs}) translate(-107 -229)">${houseDrawn}</g>
 
-        ${panelsMarkup}
-
-        <g fill="${load ? '#4AF4FF' : '#1C3045'}" fill-opacity="${load ? 0.9 : 0.3}" stroke="${houseColor}" stroke-width="2">
-          <path d="M38 128L72 139V172L38 161Z"/><path d="M126 133L164 119V153L126 167Z"/>
-        </g>
-        <g stroke="#D9FFFF" stroke-opacity="${load ? 0.9 : 0.22}" stroke-width="1.5" fill="none">
-          <path d="M55 134V166 M38 145L72 156"/><path d="M145 126V160 M126 150L164 136"/>
-        </g>
-        <path d="M82 163L109 171V218L82 209Z" fill="#FFCA69" fill-opacity="${load ? 0.85 : 0.2}" stroke="#FFDC88" stroke-width="2"/>
-        <path d="M88 169V211" stroke="#FFF5CA" stroke-opacity=".6" stroke-width="1.5"/>
-        <circle cx="102" cy="194" r="2.5" fill="#FFF5CA"/>
-        <path d="M28 183L72 199V211 M126 181L177 163" fill="none" stroke="${houseColor}" stroke-opacity=".85" stroke-width="2" class="nx-house-circuit"/>
-        <path d="M22 199L106 229L190 199" fill="none" stroke="${roofColor}" stroke-width="4" filter="url(#nx-glow)"/>
-        <path d="M22 199L106 229L190 199" fill="none" stroke="#FFFFFF" stroke-width="1.2" stroke-dasharray="3 13" class="nx-roof-pulse"/>
-        <g fill="${gridColor}" filter="url(#nx-glow)">
-          <circle cx="22" cy="199" r="3.5"/><circle cx="106" cy="229" r="3.5"/><circle cx="190" cy="199" r="3.5"/>
-        </g>
-      </g>
-
-      ${carMarkup}
       ${batteryMarkup}
+      ${carMarkup}
 `;
 
     const boxesInner = `
@@ -1208,8 +1241,8 @@ class SunMoonEnergyCard extends HTMLElement {
       <g transform="${gridT}">${bGrid.g}</g>
       <g transform="${solarT}">${bSolar.g}</g>
       <g transform="${homeT}">${bHome.g}</g>
-      ${bCar ? `<g transform="${carT}">${bCar.g}</g>` : ''}
-      ${bBatt ? `<g transform="${battT}">${bBatt.g}</g>` : ''}`;
+      ${bBatt ? `<g transform="${battT}">${bBatt.g}</g>` : ''}
+      ${bCar ? `<g transform="${carT}">${bCar.g}</g>` : ''}`;
 
     if (this._H !== H) { this._H = H; Object.values(this._el).forEach((e) => e.setAttribute('viewBox', `0 0 1000 ${H}`)); }
     if (sceneInner !== this._last.scene) { this._last.scene = sceneInner; this._el.scene.innerHTML = sceneInner; }
@@ -1217,6 +1250,7 @@ class SunMoonEnergyCard extends HTMLElement {
     this._moonLoop(moonMarkup !== '');
     if (boxesInner !== this._last.boxes) { this._last.boxes = boxesInner; this._el.boxes.innerHTML = boxesInner; }
 
+    /* meteo: i livelli si ricostruiscono solo se cambia la condizione, i colori si aggiornano sul posto */
     const wxSig = `${cond}|${sx}|${sy}|${H}`;
     if (wxSig !== this._wxSig) {
       this._wxSig = wxSig;
@@ -1405,7 +1439,7 @@ const NX_SCHEMA = [
   { type: 'expandable', name: '', title: 'Riquadro consumo casa', flatten: true, schema: [nxBox('home_box')] },
 ];
 
-class SunMoonEnergyEditor extends HTMLElement {
+class NexusSolarCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = config || {};
     this._build();
@@ -1423,7 +1457,7 @@ class SunMoonEnergyEditor extends HTMLElement {
       this._form.addEventListener('value-changed', (ev) => {
         ev.stopPropagation();
         const v = { ...ev.detail.value };
-        SUNMOON_COLOR_KEYS.forEach((k) => { if (Array.isArray(v[k])) v[k] = nxToHex(v[k]); });
+        NEXUS_COLOR_KEYS.forEach((k) => { if (Array.isArray(v[k])) v[k] = nxToHex(v[k]); });
         Object.keys(v).forEach((k) => { if (v[k] === '' || v[k] === undefined || v[k] === null) delete v[k]; });
         v.type = 'custom:sunmoon-energy';
         this._config = v;
@@ -1431,25 +1465,25 @@ class SunMoonEnergyEditor extends HTMLElement {
       });
       this.appendChild(this._form);
     }
-    const data = { ...SUNMOON_DEFAULTS, ...this._config };
-    SUNMOON_COLOR_KEYS.forEach((k) => { data[k] = nxToRgb(nxToHex(data[k]) || SUNMOON_DEFAULTS[k]); });
+    const data = { ...NEXUS_DEFAULTS, ...this._config };
+    NEXUS_COLOR_KEYS.forEach((k) => { data[k] = nxToRgb(nxToHex(data[k]) || NEXUS_DEFAULTS[k]); });
     this._form.hass = this._hass;
     this._form.schema = NX_SCHEMA;
     this._form.data = data;
   }
 }
 
-if (!customElements.get('sunmoon-energy')) customElements.define('sunmoon-energy', SunMoonEnergyCard);
-if (!customElements.get('sunmoon-energy-editor')) customElements.define('sunmoon-energy-editor', SunMoonEnergyEditor);
+if (!customElements.get('sunmoon-energy')) customElements.define('sunmoon-energy', NexusSolarCard);
+if (!customElements.get('sunmoon-energy-editor')) customElements.define('sunmoon-energy-editor', NexusSolarCardEditor);
 
 window.customCards = window.customCards || [];
 if (!window.customCards.some((c) => c.type === 'sunmoon-energy')) {
   window.customCards.push({
     type: 'sunmoon-energy',
-    name: 'Sun Moon Energy',
+    name: 'Sunmoon Energy',
     description: 'Sole, traliccio, casa e flussi energetici animati, con totali giornalieri e editor grafico.',
     preview: true,
   });
 }
 
-console.info(`%c SUNMOON-ENERGY %c v${SUNMOON_VERSION} `, 'color:#030610;background:#55EAFF;font-weight:700', 'color:#55EAFF;background:#030610');
+console.info(`%c SUNMOON-ENERGY %c v${NEXUS_VERSION} `, 'color:#030610;background:#55EAFF;font-weight:700', 'color:#55EAFF;background:#030610');
